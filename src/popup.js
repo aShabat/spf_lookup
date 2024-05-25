@@ -1,112 +1,38 @@
-'use strict';
+import { getDnsRecords } from "@layered/dns-records"
 
-import './popup.css';
+function domain_from_url(link) {
+  const url = new URL(link)
+  const hostname = url.hostname
+  const first_part = hostname.slice(0, hostname.indexOf("."))
+  if (first_part === "www") return hostname.slice(hostname.indexOf(".") + 1)
+  else return hostname
+}
 
-(function () {
-  // We will make use of Storage API to get and store `count` value
-  // More information on Storage API can we found at
-  // https://developer.chrome.com/extensions/storage
+async function get_spf_records(domain) {
+  const result = await getDnsRecords(domain, "TXT")
+  return result.map((record) => record.data)
+    .filter((data) => data.includes("spf"))
+    .map((data) => data.split(" "))
+}
 
-  // To get storage access, we have to mention it in `permissions` property of manifest.json file
-  // More information on Permissions can we found at
-  // https://developer.chrome.com/extensions/declare_permissions
-  const counterStorage = {
-    get: (cb) => {
-      chrome.storage.sync.get(['count'], (result) => {
-        cb(result.count);
-      });
-    },
-    set: (value, cb) => {
-      chrome.storage.sync.set(
-        {
-          count: value,
-        },
-        () => {
-          cb();
-        }
-      );
-    },
-  };
+const url = (await chrome.tabs.query({ active: true, currentWindow: true }))[0].url
+console.log(url)
+const domain = domain_from_url(url)
+console.log(domain)
+const output = await get_spf_records(domain)
+console.log(output)
 
-  function setupCounter(initialValue = 0) {
-    document.getElementById('counter').innerHTML = initialValue;
+const list = document.getElementById("listIndex")
+output.forEach((data) => {
+  const p = document.createElement("p")
+  p.textContent = data[0]
+  list.appendChild(p)
 
-    document.getElementById('incrementBtn').addEventListener('click', () => {
-      updateCounter({
-        type: 'INCREMENT',
-      });
-    });
-
-    document.getElementById('decrementBtn').addEventListener('click', () => {
-      updateCounter({
-        type: 'DECREMENT',
-      });
-    });
-  }
-
-  function updateCounter({ type }) {
-    counterStorage.get((count) => {
-      let newCount;
-
-      if (type === 'INCREMENT') {
-        newCount = count + 1;
-      } else if (type === 'DECREMENT') {
-        newCount = count - 1;
-      } else {
-        newCount = count;
-      }
-
-      counterStorage.set(newCount, () => {
-        document.getElementById('counter').innerHTML = newCount;
-
-        // Communicate with content script of
-        // active tab by sending a message
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const tab = tabs[0];
-
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'COUNT',
-              payload: {
-                count: newCount,
-              },
-            },
-            (response) => {
-              console.log('Current count value passed to contentScript file');
-            }
-          );
-        });
-      });
-    });
-  }
-
-  function restoreCounter() {
-    // Restore count value
-    counterStorage.get((count) => {
-      if (typeof count === 'undefined') {
-        // Set counter value as 0
-        counterStorage.set(0, () => {
-          setupCounter(0);
-        });
-      } else {
-        setupCounter(count);
-      }
-    });
-  }
-
-  document.addEventListener('DOMContentLoaded', restoreCounter);
-
-  // Communicate with background file by sending a message
-  chrome.runtime.sendMessage(
-    {
-      type: 'GREETINGS',
-      payload: {
-        message: 'Hello, my name is Pop. I am from Popup.',
-      },
-    },
-    (response) => {
-      console.log(response.message);
-    }
-  );
-})();
+  const sublist = document.createElement("ul")
+  data.slice(1).forEach((registry) => {
+    const li = document.createElement("li")
+    li.textContent = registry
+    sublist.appendChild(li)
+  })
+  list.appendChild(sublist)
+})
